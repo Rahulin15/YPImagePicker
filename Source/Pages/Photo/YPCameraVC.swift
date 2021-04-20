@@ -214,3 +214,17 @@ public class YPCameraVC: UIViewController, UIGestureRecognizerDelegate, YPPermis
         v.flashButton.isHidden = !photoCapture.hasFlash
     }
 }
+
+extension YPCameraVC {
+    public override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            coordinator.animate(alongsideTransition: { (context) -> Void in
+                self.photoCapture.videoLayer.connection?.videoOrientation = YPHelper.transformOrientation(orientation: UIInterfaceOrientation(rawValue: UIApplication.shared.statusBarOrientation.rawValue)!)
+                //            self.prevLayer?.frame.size = self.myView.frame.size
+            }, completion: { (context) -> Void in
+                super.viewWillTransition(to: size, with: coordinator)
+            })
+        }
+    }
+
+}

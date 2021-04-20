@@ -12,7 +12,7 @@ public class YPVideoCaptureVC: UIViewController, YPPermissionCheckable {
     
     public var didCaptureVideo: ((URL) -> Void)?
     
-    private let videoHelper = YPVideoCaptureHelper()
+    let videoHelper = YPVideoCaptureHelper()
     private let v = YPCameraView(overlayView: nil)
     private var viewState = ViewState()
     
@@ -24,9 +24,10 @@ public class YPVideoCaptureVC: UIViewController, YPPermissionCheckable {
         super.init(nibName: nil, bundle: nil)
         title = YPConfig.wordings.videoTitle
         videoHelper.didCaptureVideo = { [weak self] videoURL in
-            self?.didCaptureVideo?(videoURL)
             self?.resetVisualState()
+            self?.didCaptureVideo?(videoURL)
         }
+
         videoHelper.videoRecordingProgress = { [weak self] progress, timeElapsed in
             self?.updateState {
                 $0.progress = progress
@@ -134,6 +135,11 @@ public class YPVideoCaptureVC: UIViewController, YPPermissionCheckable {
     }
     
     private func startRecording() {
+        /// Stop the screen from going to sleep while recording video
+        DispatchQueue.main.async {
+            UIApplication.shared.isIdleTimerDisabled = true
+        }
+        
         videoHelper.startRecording()
         updateState {
             $0.isRecording = true
@@ -141,6 +147,11 @@ public class YPVideoCaptureVC: UIViewController, YPPermissionCheckable {
     }
     
     private func stopRecording() {
+        /// Reset screen always on to false since the need no longer exists
+        DispatchQueue.main.async {
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
+        
         videoHelper.stopRecording()
         updateState {
             $0.isRecording = false
@@ -148,6 +159,7 @@ public class YPVideoCaptureVC: UIViewController, YPPermissionCheckable {
     }
 
     public func stopCamera() {
+        UIApplication.shared.isIdleTimerDisabled = false
         videoHelper.stopCamera()
     }
     
@@ -247,6 +259,18 @@ public class YPVideoCaptureVC: UIViewController, YPPermissionCheckable {
             }
         } else {
             return .noFlash
+        }
+    }
+}
+
+extension YPVideoCaptureVC {
+    public override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            coordinator.animate(alongsideTransition: { (context) -> Void in
+                self.videoHelper.videoLayer.connection?.videoOrientation = YPHelper.transformOrientation(orientation: UIInterfaceOrientation(rawValue: UIApplication.shared.statusBarOrientation.rawValue)!)
+            }, completion: { (context) -> Void in
+                super.viewWillTransition(to: size, with: coordinator)
+            })
         }
     }
 }

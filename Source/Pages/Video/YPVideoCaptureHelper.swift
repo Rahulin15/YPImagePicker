@@ -22,14 +22,16 @@ class YPVideoCaptureHelper: NSObject {
     private var dateVideoStarted = Date()
     private let sessionQueue = DispatchQueue(label: "YPVideoVCSerialQueue")
     private var videoInput: AVCaptureDeviceInput?
-    private var videoOutput = AVCaptureMovieFileOutput()
+    var videoOutput = AVCaptureMovieFileOutput()
     private var videoRecordingTimeLimit: TimeInterval = 0
     private var isCaptureSessionSetup: Bool = false
     private var isPreviewSetup = false
     private var previewView: UIView!
     private var motionManager = CMMotionManager()
     private var initVideoZoomFactor: CGFloat = 1.0
-    
+    var videoLayer: AVCaptureVideoPreviewLayer!
+
+    var cancelledRecording = false
     // MARK: - Init
     
     public func start(previewView: UIView, withVideoRecordingLimit: TimeInterval, completion: @escaping () -> Void) {
@@ -180,7 +182,7 @@ class YPVideoCaptureHelper: NSObject {
     // MARK: - Recording
     
     public func startRecording() {
-        
+        UIApplication.shared.isIdleTimerDisabled = true
         let outputURL = YPVideoProcessor.makeVideoPathURL(temporaryFolder: true, fileName: "recordedVideoRAW")
         
         checkOrientation { [weak self] orientation in
@@ -198,6 +200,7 @@ class YPVideoCaptureHelper: NSObject {
     
     public func stopRecording() {
         videoOutput.stopRecording()
+        UIApplication.shared.isIdleTimerDisabled = false
     }
     
     // Private
@@ -281,12 +284,19 @@ class YPVideoCaptureHelper: NSObject {
     }
     
     func setupPreview() {
-        let videoLayer = AVCaptureVideoPreviewLayer(session: session)
+        self.videoLayer = AVCaptureVideoPreviewLayer(session: session)
         DispatchQueue.main.async {
-            videoLayer.frame = self.previewView.bounds
-            videoLayer.videoGravity = AVLayerVideoGravity.resizeAspectFill
-            self.previewView.layer.addSublayer(videoLayer)
+            self.videoLayer.frame = self.previewView.bounds
+            self.videoLayer.videoGravity = AVLayerVideoGravity.resizeAspectFill
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                self.videoLayer.connection?.videoOrientation = YPHelper.transformOrientation(orientation: UIInterfaceOrientation(rawValue: UIApplication.shared.statusBarOrientation.rawValue)!)
+            }
+            self.previewView.layer.addSublayer(self.videoLayer)
         }
+    }
+    func getLengthOfRecordedVideo(url: URL) -> Double {
+        let duration = AVURLAsset(url: url).duration.seconds
+        return duration
     }
 }
 
@@ -302,13 +312,23 @@ extension YPVideoCaptureHelper: AVCaptureFileOutputRecordingDelegate {
                                      repeats: true)
         dateVideoStarted = Date()
     }
-    
+
     public func fileOutput(_ captureOutput: AVCaptureFileOutput,
                            didFinishRecordingTo outputFileURL: URL,
                            from connections: [AVCaptureConnection],
                            error: Error?) {
+        if cancelledRecording {
+            cancelledRecording = false
+            timer.invalidate()
+            return
+        }
         if YPConfig.onlySquareImagesFromCamera {
+            let indicator = YPLoaders.fullScreenLoader
+            UIApplication.shared.keyWindow?.addSubview(indicator)
             YPVideoProcessor.cropToSquare(filePath: outputFileURL) { [weak self] url in
+                DispatchQueue.main.async {
+                    indicator.removeFromSuperview()
+                }
                 guard let _self = self, let u = url else { return }
                 _self.didCaptureVideo?(u)
             }
